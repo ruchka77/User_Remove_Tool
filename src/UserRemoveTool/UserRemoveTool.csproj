@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <!-- Console application; WPF is used only for the user search window -->
+    <OutputType>Exe</OutputType>
     <UseWPF>true</UseWPF>
     <AssemblyName>UserRemoveTool</AssemblyName>
     <RootNamespace>UserRemoveTool</RootNamespace>
@@ -12,7 +13,6 @@
     <PublishSingleFile>false</PublishSingleFile>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <TieredPGO>false</TieredPGO>
-    <UseSystemResourceKeys>false</UseSystemResourceKeys>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\UserRemoveTool.Core\UserRemoveTool.Core.csproj" />

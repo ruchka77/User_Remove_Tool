@@ -15,6 +15,7 @@ public sealed class OffboardingRecord
     public string CurrentOu { get; set; } = "";
     [JsonPropertyName("mail")] public string Mail { get; set; } = "";
     [JsonPropertyName("homeDirectory")] public string HomeDirectory { get; set; } = "";
+    [JsonPropertyName("nationalId")] public string NationalId { get; set; } = "";
     [JsonPropertyName("samAccountName")] public string SamAccountName { get; set; } = "";
 }
 

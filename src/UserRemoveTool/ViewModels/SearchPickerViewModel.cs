@@ -1,31 +1,40 @@
 using System.Windows.Input;
 using UserRemoveTool.Core;
+using UserRemoveTool.Core.ActiveDirectory;
+using UserRemoveTool.Core.Configuration;
+using UserRemoveTool.Core.Logging;
 using UserRemoveTool.Core.Models;
 using UserRemoveTool.Mvvm;
 
 namespace UserRemoveTool.ViewModels;
 
-public sealed class SearchViewModel : ObservableObject
+/// <summary>Live user search and selection for the pop-up window.</summary>
+public sealed class SearchPickerViewModel : ObservableObject
 {
-    private readonly MainViewModel _main;
+    private readonly IDirectoryService _directory;
+    private readonly ActiveDirectorySettings _settings;
+    private readonly IAppLogger _log;
     private CancellationTokenSource? _search;
     private string _text = "";
     private string _status;
-    private bool _isSearching;
     private IReadOnlyList<DirectoryUser> _results = [];
     private DirectoryUser? _selected;
 
-    public SearchViewModel(MainViewModel main)
+    public SearchPickerViewModel(IDirectoryService directory, ActiveDirectorySettings settings, IAppLogger log)
     {
-        _main = main;
+        _directory = directory;
+        _settings = settings;
+        _log = log;
         _status = Hint;
-        ContinueCommand = main.Command(ContinueAsync, () => Selected is not null);
+        ContinueCommand = new RelayCommand(() => { Chosen = Selected; RequestClose?.Invoke(true); }, () => Selected is not null);
+        CancelCommand = new RelayCommand(() => RequestClose?.Invoke(false));
     }
 
-    public MainViewModel Main => _main;
+    public Action<bool>? RequestClose { get; set; }
+    public DirectoryUser? Chosen { get; private set; }
     public ICommand ContinueCommand { get; }
+    public ICommand CancelCommand { get; }
     public string Status { get => _status; private set => Set(ref _status, value); }
-    public bool IsSearching { get => _isSearching; private set => Set(ref _isSearching, value); }
     public IReadOnlyList<DirectoryUser> Results { get => _results; private set => Set(ref _results, value); }
 
     public DirectoryUser? Selected
@@ -40,62 +49,40 @@ public sealed class SearchViewModel : ObservableObject
         set { if (Set(ref _text, value)) _ = SearchAsync(value.Trim()); }
     }
 
-    private string Hint => $"יש להקליד לפחות {_main.Services.Settings.ActiveDirectory.MinSearchLength} תווים";
+    private string Hint => $"יש להקליד לפחות {_settings.MinSearchLength} תווים";
+
+    public void CancelPendingSearch() => _search?.Cancel();
 
     private async Task SearchAsync(string term)
     {
         _search?.Cancel();
         var cts = _search = new CancellationTokenSource();
-        var settings = _main.Services.Settings.ActiveDirectory;
 
         // Results of an older term must never stay selectable under a new one.
         Selected = null;
         Results = [];
-        IsSearching = false;
-        if (term.Length < settings.MinSearchLength)
+        if (term.Length < _settings.MinSearchLength)
         {
             Status = Hint;
             return;
         }
         try
         {
-            await Task.Delay(settings.SearchDelayMs, cts.Token);
-            IsSearching = true;
+            await Task.Delay(_settings.SearchDelayMs, cts.Token);
             Status = "מחפש...";
-            var found = await _main.Services.Directory.SearchAsync(term, cts.Token);
+            var found = await _directory.SearchAsync(term, cts.Token);
             if (cts.IsCancellationRequested) return;
             Results = found;
             Status = found.Count == 0 ? "לא נמצאו משתמשים"
-                : found.Count >= settings.MaxResults ? $"מוצגות {found.Count} התוצאות הראשונות, יש לצמצם את החיפוש"
+                : found.Count >= _settings.MaxResults ? $"מוצגות {found.Count} התוצאות הראשונות, יש לצמצם את החיפוש"
                 : $"נמצאו {found.Count} משתמשים";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             if (cts.IsCancellationRequested) return;
-            _main.Services.Log.Error("Search failed", ex);
+            _log.Error("Search failed", ex);
             Status = ex is UserFacingException ? ex.Message : $"החיפוש נכשל: {ex.Message}";
         }
-        finally
-        {
-            if (ReferenceEquals(_search, cts)) IsSearching = false;
-        }
-    }
-
-    private async Task ContinueAsync()
-    {
-        var user = Selected!;
-        _main.CompletedSteps = 1;
-        try
-        {
-            await _main.Services.Workflow.StartAsync(user.ObjectGuid);
-        }
-        catch
-        {
-            _main.CompletedSteps = 0;
-            throw;
-        }
-        _main.ShowGroups();
-        await ((GroupsViewModel)_main.Page).LoadAsync();
     }
 }

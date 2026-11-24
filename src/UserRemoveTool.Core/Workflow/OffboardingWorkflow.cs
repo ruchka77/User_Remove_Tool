@@ -42,6 +42,7 @@ public sealed class OffboardingWorkflow(IDirectoryService directory, IAuditLogge
             CurrentOu = user.CurrentOu,
             Mail = user.Email,
             HomeDirectory = user.HomeDirectory,
+            NationalId = user.NationalId,
             SamAccountName = user.SamAccountName
         };
         RecordPath = store.Save(record);

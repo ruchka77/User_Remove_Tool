@@ -18,7 +18,7 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
 
     private static readonly string[] UserAttributes =
     [
-        "objectGUID", "objectSid", "displayName", "name", "sAMAccountName", "mail", "homeDirectory",
+        "objectGUID", "objectSid", "displayName", "name", "sAMAccountName", "mail", "homeDirectory", "extensionAttribute1",
         "userAccountControl", "primaryGroupID", "isCriticalSystemObject", "adminCount"
     ];
 
@@ -204,6 +204,7 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
             DisplayName = display.Length > 0 ? display : Text(e, "name"),
             Email = Text(e, "mail"),
             HomeDirectory = Text(e, "homeDirectory"),
+            NationalId = Text(e, "extensionAttribute1"),
             CurrentOu = LdapText.GetParent(dn),
             Sid = GetSid(e)?.Value ?? "",
             UserAccountControl = int.TryParse(Text(e, "userAccountControl"), out var uac) ? uac : null,

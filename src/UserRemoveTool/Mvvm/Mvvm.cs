@@ -19,7 +19,7 @@ public abstract class ObservableObject : INotifyPropertyChanged
     }
 }
 
-public sealed class RelayCommand(Action<object?> execute, Func<bool>? canExecute = null) : ICommand
+public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) : ICommand
 {
     public event EventHandler? CanExecuteChanged
     {
@@ -28,22 +28,5 @@ public sealed class RelayCommand(Action<object?> execute, Func<bool>? canExecute
     }
 
     public bool CanExecute(object? parameter) => canExecute?.Invoke() ?? true;
-    public void Execute(object? parameter) => execute(parameter);
-}
-
-/// <summary>Runs through a shared runner, which blocks any second action while one is in progress.</summary>
-public sealed class AsyncCommand(Func<Func<Task>, Task> runner, Func<Task> execute, Func<bool> canExecute) : ICommand
-{
-    public event EventHandler? CanExecuteChanged
-    {
-        add => CommandManager.RequerySuggested += value;
-        remove => CommandManager.RequerySuggested -= value;
-    }
-
-    public bool CanExecute(object? parameter) => canExecute();
-
-    public async void Execute(object? parameter)
-    {
-        if (canExecute()) await runner(execute);
-    }
+    public void Execute(object? parameter) => execute();
 }

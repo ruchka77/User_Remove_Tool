@@ -4,6 +4,7 @@ using UserRemoveTool.Core.Configuration;
 using UserRemoveTool.Core.Logging;
 using UserRemoveTool.Core.Models;
 using UserRemoveTool.Core.ServiceDesk;
+using UserRemoveTool.Core.Text;
 using UserRemoveTool.Core.Workflow;
 using Xunit;
 
@@ -52,6 +53,63 @@ public class ConfigurationTests
         var s = new AppSettings();
         s.ActiveDirectory.TargetOu = "nonsense";
         Assert.Contains("TargetOu", Assert.Throws<UserFacingException>(s.Validate).Message);
+    }
+}
+
+public class NationalIdTests
+{
+    [Theory]
+    [InlineData("000000018", NationalIdStatus.Valid)]
+    [InlineData("18", NationalIdStatus.Valid)]
+    [InlineData(" 000-000-018 ", NationalIdStatus.Valid)]
+    [InlineData("000000019", NationalIdStatus.Invalid)]
+    [InlineData("12345678901", NationalIdStatus.Invalid)]
+    [InlineData("abc", NationalIdStatus.Invalid)]
+    [InlineData("", NationalIdStatus.Missing)]
+    [InlineData(null, NationalIdStatus.Missing)]
+    public void Israeli_id_check_digit(string? value, NationalIdStatus expected) =>
+        Assert.Equal(expected, NationalIdValidator.Check(value));
+
+    [Fact]
+    public async Task National_id_is_saved_to_the_json_file()
+    {
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        var record = new OffboardingRecord { CorrelationId = "x", NationalId = "000000018", SamAccountName = "a" };
+        var store = new RecordStore(dir);
+        var path = store.Save(record);
+        Assert.Contains("\"nationalId\": \"000000018\"", File.ReadAllText(path));
+        Assert.Equal("000000018", store.Load(path).NationalId);
+        await Task.CompletedTask;
+        Directory.Delete(dir, true);
+    }
+}
+
+public class VisualTextTests
+{
+    [Theory]
+    [InlineData("שלום", "םולש")]
+    [InlineData("שם משתמש: danac", "danac :שמתשמ םש")]
+    [InlineData("דנה (danac)", "(danac) הנד")]
+    [InlineData("שלב 3 מתוך 6", "6 ךותמ 3 בלש")]
+    [InlineData("OU=IT,OU=Users,DC=moia", "OU=IT,OU=Users,DC=moia")]
+    public void Hebrew_is_laid_out_right_to_left(string logical, string visual) =>
+        Assert.Equal(visual, VisualText.ToVisual(logical));
+
+    [Fact]
+    public void Path_keeps_its_reading_order_next_to_hebrew()
+    {
+        const string path = @"\\fs01\home$\danac";
+        var label = "תיקיית בית: ";
+        var expected = path + new string(label.Reverse().ToArray());
+        Assert.Equal(expected, VisualText.ToVisual(label + path));
+    }
+
+    [Fact]
+    public void Wrap_breaks_before_reordering()
+    {
+        var lines = VisualText.Wrap("אחד שניים שלושה ארבעה חמישה", 12).ToList();
+        Assert.All(lines, l => Assert.True(l.Length <= 12));
+        Assert.Equal("אחד שניים שלושה ארבעה חמישה", string.Join(" ", lines));
     }
 }
 

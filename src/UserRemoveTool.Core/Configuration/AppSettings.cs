@@ -8,6 +8,7 @@ public sealed class AppSettings
     public ActiveDirectorySettings ActiveDirectory { get; set; } = new();
     public ServiceDeskSettings ServiceDesk { get; set; } = new();
     public LoggingSettings Logging { get; set; } = new();
+    public TerminalSettings Terminal { get; set; } = new();
 
     public static AppSettings Load(string path)
     {
@@ -30,7 +31,7 @@ public sealed class AppSettings
     public void Validate()
     {
         // Explicit nulls in the JSON must produce a clear message, not a NullReferenceException.
-        if (ActiveDirectory is null || ServiceDesk is null || Logging is null)
+        if (ActiveDirectory is null || ServiceDesk is null || Logging is null || Terminal is null)
             throw new UserFacingException("שגיאה בקובץ ההגדרות: חסר אחד מהמקטעים ActiveDirectory / ServiceDesk / Logging.");
 
         var errors = new List<string>();
@@ -112,6 +113,15 @@ public sealed class FieldLocator
 {
     public List<string> Selectors { get; set; } = new();
     public List<string> Labels { get; set; } = new();
+}
+
+public sealed class TerminalSettings
+{
+    /// <summary>
+    /// true = the program reorders Hebrew itself (needed in conhost and Windows Terminal, which do not apply
+    /// the bidirectional algorithm). Set false only for a terminal that reorders Hebrew on its own.
+    /// </summary>
+    public bool VisualHebrew { get; set; } = true;
 }
 
 public sealed class LoggingSettings

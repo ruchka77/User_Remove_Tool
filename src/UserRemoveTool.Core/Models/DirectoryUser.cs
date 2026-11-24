@@ -8,6 +8,8 @@ public sealed record DirectoryUser
     public string DisplayName { get; init; } = "";
     public string Email { get; init; } = "";
     public string HomeDirectory { get; init; } = "";
+    /// <summary>extensionAttribute1.</summary>
+    public string NationalId { get; init; } = "";
     public string CurrentOu { get; init; } = "";
     public string Sid { get; init; } = "";
     /// <summary>Null when the attribute cannot be read; it must never be written back in that case.</summary>
