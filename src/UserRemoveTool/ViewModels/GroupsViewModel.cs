@@ -80,7 +80,7 @@ public sealed class GroupsViewModel : ObservableObject
         var count = Groups.Count(g => g.Status is OperationStatus.Pending or OperationStatus.Failed);
         var warning = User.IsPrivileged ? "\n\nשים לב: למשתמש יש או היו הרשאות ניהול (adminCount=1)." : "";
         if (!_main.Services.Dialogs.Confirm("הסרת קבוצות",
-                $"המשתמש {User.DisplayName} ({User.SamAccountName}) יוסר מ-{count} קבוצות. Domain Users לא תוסר.{warning}", "הסר קבוצות"))
+                $"המשתמש {User.DisplayName} ({User.SamAccountName}) יוסר מ-{count} קבוצות. Domain Users לא תוסר.{warning}", "הסר קבוצות", danger: true))
         {
             _main.Services.Workflow.Audit("RemoveGroups", AuditOutcome.Cancelled);
             return;

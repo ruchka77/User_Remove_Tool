@@ -11,7 +11,8 @@ namespace UserRemoveTool.ViewModels;
 
 public interface IDialogService
 {
-    bool Confirm(string title, string message, string actionText);
+    /// <summary>danger = the confirm button is red (destructive action).</summary>
+    bool Confirm(string title, string message, string actionText, bool danger = false);
     void Error(string message);
     void Copy(string text);
 }

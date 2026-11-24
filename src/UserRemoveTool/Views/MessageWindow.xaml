@@ -8,7 +8,7 @@
     <TextBlock x:Name="Heading" DockPanel.Dock="Top" Style="{StaticResource Title}" />
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
       <Button x:Name="Ok" />
-      <Button x:Name="Cancel" Content="ביטול" IsCancel="True" Margin="8,0,0,0" />
+      <Button x:Name="Cancel" Style="{StaticResource Danger}" Content="ביטול" IsCancel="True" Margin="8,0,0,0" />
     </StackPanel>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <TextBlock x:Name="Body" TextWrapping="Wrap" />

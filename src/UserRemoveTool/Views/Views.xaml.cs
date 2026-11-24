@@ -21,7 +21,7 @@ public partial class MainWindow : Window
             main.Services.Dialogs.Error("פעולה מתבצעת כעת. יש להמתין לסיומה לפני סגירת התוכנה.");
         }
         else if (main.Page is MoveViewModel &&
-                 !main.Services.Dialogs.Confirm("יציאה", "התהליך לא הושלם: החשבון עדיין לא הועבר והושבת במלואו. לצאת בכל זאת?", "יציאה"))
+                 !main.Services.Dialogs.Confirm("יציאה", "התהליך לא הושלם: החשבון עדיין לא הועבר והושבת במלואו. לצאת בכל זאת?", "יציאה", danger: true))
         {
             e.Cancel = true;
         }
@@ -43,9 +43,10 @@ public partial class TicketView : UserControl { public TicketView() => Initializ
 
 public partial class MessageWindow : Window
 {
-    public MessageWindow(string title, string message, string action, bool showCancel)
+    public MessageWindow(string title, string message, string action, bool showCancel, bool danger = false)
     {
         InitializeComponent();
+        if (danger || !showCancel) Ok.Style = (Style)FindResource("Danger"); // remove / close = red
         Title = Heading.Text = title;
         Body.Text = message;
         Ok.Content = action;
@@ -61,8 +62,8 @@ public partial class MessageWindow : Window
 
 public sealed class DialogService : IDialogService
 {
-    public bool Confirm(string title, string message, string actionText) => Show(title, message, actionText, true);
-    public void Error(string message) => Show("הודעה", message, "סגור", false);
+    public bool Confirm(string title, string message, string actionText, bool danger = false) => Show(title, message, actionText, true, danger);
+    public void Error(string message) => Show("הודעה", message, "סגור", false, false);
 
     public void Copy(string text)
     {
@@ -70,9 +71,9 @@ public sealed class DialogService : IDialogService
         catch (COMException) { Error("ההעתקה נכשלה כי לוח ההעתקה בשימוש. יש לנסות שוב."); }
     }
 
-    private static bool Show(string title, string message, string action, bool showCancel)
+    private static bool Show(string title, string message, string action, bool showCancel, bool danger)
     {
-        var window = new MessageWindow(title, message, action, showCancel);
+        var window = new MessageWindow(title, message, action, showCancel, danger);
         if (Application.Current.MainWindow is { IsLoaded: true } owner && owner != window) window.Owner = owner;
         else window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         return window.ShowDialog() == true;

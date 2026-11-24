@@ -4,7 +4,7 @@
   <StackPanel>
     <TextBlock Style="{StaticResource Title}" Text="{Binding Title}" />
     <TextBlock Text="{Binding Message}" FontSize="16" TextWrapping="Wrap" Margin="0,0,0,16" />
-    <Border Background="White" BorderBrush="#DDDDDD" BorderThickness="1" Padding="12" Margin="0,0,0,16">
+    <Border Margin="0,0,0,16">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />

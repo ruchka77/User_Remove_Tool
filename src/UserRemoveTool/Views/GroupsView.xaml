@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <DockPanel>
     <TextBlock DockPanel.Dock="Top" Style="{StaticResource Title}" Text="סיכום והסרת קבוצות" />
-    <Border DockPanel.Dock="Top" Background="White" BorderBrush="#DDDDDD" BorderThickness="1" Padding="12" Margin="0,0,0,12">
+    <Border DockPanel.Dock="Top" Margin="0,0,0,12">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
@@ -26,10 +26,10 @@
       </Grid>
     </Border>
     <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" LastChildFill="False">
-      <Button DockPanel.Dock="Left" Content="הסר קבוצות" Command="{Binding RemoveCommand}" />
+      <Button DockPanel.Dock="Left" Style="{StaticResource Danger}" Content="הסר קבוצות" Command="{Binding RemoveCommand}" />
       <Button DockPanel.Dock="Left" Content="רענן" Command="{Binding ReloadCommand}" Margin="8,0,0,0" />
       <Button DockPanel.Dock="Right" Content="המשך" Command="{Binding ContinueCommand}" />
-      <Button DockPanel.Dock="Right" Content="חזרה לחיפוש" Command="{Binding BackCommand}" Margin="8,0" />
+      <Button DockPanel.Dock="Right" Style="{StaticResource Danger}" Content="חזרה לחיפוש" Command="{Binding BackCommand}" Margin="8,0" />
     </DockPanel>
     <ProgressBar DockPanel.Dock="Bottom" Height="8" Margin="0,8,0,0" Maximum="{Binding Total, Mode=OneWay}" Value="{Binding Handled, Mode=OneWay}"
                  AutomationProperties.Name="התקדמות הסרת קבוצות" />
