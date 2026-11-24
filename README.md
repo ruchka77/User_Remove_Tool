@@ -12,7 +12,9 @@
 
 ## הפעלה
 
-מעתיקים את תיקיית `publish` לתחנה ולוחצים פעמיים על `Launch.bat`.
+התוכנה מגיעה מוכנה: התיקייה `publish` כבר כוללת קובץ הפעלה בנוי (`UserRemoveTool.exe`) וקובצי ההגדרות. אין צורך לבנות או לפרסם דבר.
+לוחצים פעמיים על `Launch.bat` (בשורש הפרויקט או בתוך `publish`). הוא רק מפעיל את הקובץ הקיים, כשתיקיית העבודה היא תיקיית קובץ ההפעלה, כך ש-`appsettings.json` נמצא כראוי.
+להפצה מעתיקים את כל תיקיית `publish` לתחנה.
 
 ## מהלך העבודה
 
@@ -88,9 +90,7 @@
 
 </div>
 
-```bat
-Publish.bat
-```
+הבנייה נדרשת רק למפתחים, לאחר שינוי בקוד. ‏`Launch.bat` אינו בונה. הפקודה מעדכנת את התיקייה `publish`:
 
 ```bat
 dotnet publish src\UserRemoveTool\UserRemoveTool.csproj -c Release -r win-x64 --self-contained true -p:PublishProfile=win-x64 -o publish

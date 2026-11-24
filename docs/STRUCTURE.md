@@ -8,8 +8,8 @@ Three projects. `UserRemoveTool` (WPF) and `UserRemoveTool.Tests` both depend on
 |---|---|
 | `UserRemoveTool.sln` | Solution |
 | `Directory.Build.props` | Target framework, language version and warnings for all projects |
-| `Launch.bat` | Starts the published application; also copied into `publish` |
-| `Publish.bat` | Builds the self-contained `win-x64` folder `publish` |
+| `Launch.bat` | Only starts the pre-built `UserRemoveTool.exe` (from `publish`, or next to itself) with the exe folder as working directory; never builds. Also copied into `publish` |
+| `publish/` | Pre-built self-contained `win-x64` output (exe, runtime, `appsettings.json`, `Launch.bat`). Regenerate after code changes with `dotnet publish src\UserRemoveTool\UserRemoveTool.csproj -c Release -r win-x64 --self-contained true -p:PublishProfile=win-x64 -o publish` |
 | `README.md` | Operator and administrator guide (Hebrew) |
 
 ## src/UserRemoveTool.Core: logic
