@@ -23,19 +23,34 @@ public class LdapTextTests
 
     [Fact]
     public void Filter_escapes_injection() =>
-        Assert.Contains(@"(sn=a\29\28objectClass=\2a\29*)", LdapText.BuildUserFilter("a)(objectClass=*)", false));
+        Assert.Contains(@"(sn=*a\29\28objectClass=\2a\29*)", LdapText.BuildUserFilter("a)(objectClass=*)"));
 
     [Fact]
-    public void Filter_matches_first_and_last_name_in_any_order()
+    public void Filter_is_users_only_and_does_not_exclude_disabled_accounts()
     {
-        var filter = LdapText.BuildUserFilter("דנה כהן", false);
-        Assert.Contains("(displayName=דנה כהן*)", filter);
-        Assert.Contains("(givenName=דנה*)", filter);
-        Assert.Contains("(sn=כהן*)", filter);
+        var filter = LdapText.BuildUserFilter("moshe");
+        Assert.StartsWith("(&(objectCategory=person)(objectClass=user)", filter);
+        Assert.DoesNotContain("userAccountControl", filter);
+    }
+
+    [Fact]
+    public void Filter_matches_contains_on_all_ten_attributes()
+    {
+        var filter = LdapText.BuildUserFilter("משה");
+        foreach (var attribute in new[] { "displayName", "cn", "name", "givenName", "sn", "sAMAccountName", "userPrincipalName", "mail", "description", "extensionAttribute1" })
+            Assert.Contains($"({attribute}=*משה*)", filter);
         Assert.Equal(filter.Count(c => c == '('), filter.Count(c => c == ')'));
     }
-}
 
+    [Fact]
+    public void Every_word_must_match_some_attribute()
+    {
+        var filter = LdapText.BuildUserFilter("  משה   כהן ");
+        Assert.Equal(1, filter.Split("(displayName=*משה*)").Length - 1);
+        Assert.Contains("(givenName=*כהן*)", filter);
+        Assert.Matches(@"^\(&\(objectCategory=person\)\(objectClass=user\)\(\|.*משה.*\)\(\|.*כהן.*\)\)$", filter);
+    }
+}
 public class ConfigurationTests
 {
     [Fact]

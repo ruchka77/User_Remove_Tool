@@ -27,17 +27,30 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
 
     private sealed record Session(LdapConnection Connection, string BaseDn, SecurityIdentifier DomainSid);
 
+    private const int PageSize = 1000;
+
+    /// <summary>
+    /// Like "Find Users, Contacts, and Groups": whole domain, subtree, enabled and disabled users, *term* on all name
+    /// attributes. Every page is read until the cap, so AD never truncates silently at the first page.
+    /// </summary>
     public Task<IReadOnlyList<DirectoryUser>> SearchAsync(string term, CancellationToken ct) => Run(() => Read(s =>
     {
-        ct.ThrowIfCancellationRequested();
-        var request = new SearchRequest(s.BaseDn, LdapText.BuildUserFilter(term, settings.SearchAnywhere), SearchScope.Subtree, UserAttributes);
-        // A single page caps the result set without raising SizeLimitExceeded.
-        request.Controls.Add(new PageResultRequestControl(settings.MaxResults));
-        var response = (SearchResponse)s.Connection.SendRequest(request);
-        return (IReadOnlyList<DirectoryUser>)response.Entries.Cast<SearchResultEntry>().Select(ToUser)
+        var filter = LdapText.BuildUserFilter(term);
+        var users = new List<DirectoryUser>();
+        var cookie = Array.Empty<byte>();
+        do
+        {
+            ct.ThrowIfCancellationRequested();
+            var request = new SearchRequest(s.BaseDn, filter, SearchScope.Subtree, UserAttributes) { SizeLimit = 0 };
+            request.Controls.Add(new PageResultRequestControl(PageSize) { Cookie = cookie });
+            var response = (SearchResponse)s.Connection.SendRequest(request);
+            users.AddRange(response.Entries.Cast<SearchResultEntry>().Select(ToUser));
+            cookie = response.Controls.OfType<PageResultResponseControl>().FirstOrDefault()?.Cookie ?? [];
+        } while (cookie.Length > 0 && users.Count < settings.MaxResults);
+
+        return (IReadOnlyList<DirectoryUser>)users.Take(settings.MaxResults)
             .OrderBy(u => u.DisplayName, StringComparer.CurrentCulture).ToList();
     }), ct);
-
     public Task<DirectoryUser> GetUserAsync(Guid objectGuid) => Run(() => Read(s => FindUser(s, objectGuid)));
 
     public Task EnsureTargetOuAsync() => Run(() => Read(s =>

@@ -45,7 +45,7 @@ public sealed class AppSettings
         if (ActiveDirectory.TargetOu is { Length: > 0 } ou &&
             !(ou.StartsWith("OU=", StringComparison.OrdinalIgnoreCase) && ou.Contains("DC=", StringComparison.OrdinalIgnoreCase)))
             errors.Add("ActiveDirectory:TargetOu אינו Distinguished Name תקין של OU");
-        if (ActiveDirectory.MaxResults is < 1 or > 1000) errors.Add("ActiveDirectory:MaxResults חייב להיות בין 1 ל-1000");
+        if (ActiveDirectory.MaxResults is < 1 or > 10000) errors.Add("ActiveDirectory:MaxResults חייב להיות בין 1 ל-10000");
         if (ActiveDirectory.TimeoutSeconds is < 1 or > 600) errors.Add("ActiveDirectory:TimeoutSeconds חייב להיות בין 1 ל-600");
         if (ActiveDirectory.MinSearchLength < 1) errors.Add("ActiveDirectory:MinSearchLength חייב להיות 1 לפחות");
         if (ActiveDirectory.SearchDelayMs < 0) errors.Add("ActiveDirectory:SearchDelayMs אינו תקין");
@@ -81,12 +81,11 @@ public sealed class ActiveDirectorySettings
 {
     public string DomainController { get; set; } = "moia.gov.il";
     public string TargetOu { get; set; } = "OU=Disabled Users,OU=Users,OU=MOIA,DC=moia,DC=gov,DC=il";
-    public int MaxResults { get; set; } = 50;
+    /// <summary>Upper limit of users shown; results are read page by page (1000 per page) up to this number.</summary>
+    public int MaxResults { get; set; } = 1000;
     public int MinSearchLength { get; set; } = 2;
-    public int SearchDelayMs { get; set; } = 300;
+    public int SearchDelayMs { get; set; } = 250;
     public int TimeoutSeconds { get; set; } = 30;
-    /// <summary>false = prefix match (indexed, fast); true = match anywhere (slower on large domains).</summary>
-    public bool SearchAnywhere { get; set; }
 }
 
 public sealed class ServiceDeskSettings

@@ -49,16 +49,19 @@ public static class LdapText
         return Normalize(a).Equals(Normalize(b), StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Every word must match one of the fields, or the whole phrase must match a single field.</summary>
-    public static string BuildUserFilter(string term, bool anywhere)
+    /// <summary>The attributes searched, as in ADUC "Find Users, Contacts, and Groups" plus mail, description and the national id.</summary>
+    public static readonly string[] SearchAttributes =
+    [
+        "displayName", "cn", "name", "givenName", "sn", "sAMAccountName", "userPrincipalName", "mail", "description", "extensionAttribute1"
+    ];
+
+    /// <summary>
+    /// Users only (enabled and disabled). Every whitespace-separated word must appear (*word*) in at least one attribute,
+    /// so "משה כהן" finds givenName + sn as well as a display name.
+    /// </summary>
+    public static string BuildUserFilter(string term)
     {
-        string[] fields = ["displayName", "givenName", "sn", "sAMAccountName", "userPrincipalName"];
-        var lead = anywhere ? "*" : "";
-        string Any(string word) => "(|" + string.Concat(fields.Select(f => $"({f}={lead}{EscapeFilter(word)}*)")) + ")";
+        string Any(string word) => "(|" + string.Concat(SearchAttributes.Select(a => $"({a}=*{EscapeFilter(word)}*)")) + ")";
         var words = term.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        var match = words.Length == 1
-            ? Any(words[0])
-            : $"(|{Any(string.Join(' ', words))}(&{string.Concat(words.Select(Any))}))";
-        return $"(&(objectCategory=person)(objectClass=user){match})";
-    }
-}
+        return $"(&(objectCategory=person)(objectClass=user){string.Concat(words.Select(Any))})";
+    }}
