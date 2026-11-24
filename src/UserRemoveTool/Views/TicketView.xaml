@@ -1,0 +1,41 @@
+<UserControl x:Class="UserRemoveTool.Views.TicketView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DockPanel>
+    <TextBlock DockPanel.Dock="Top" Style="{StaticResource Title}" Text="קריאה ב-CA Service Desk" />
+    <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12" />
+    <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" LastChildFill="False">
+      <Button DockPanel.Dock="Left" Content="נסה שוב" Command="{Binding RetryCommand}" />
+      <Button DockPanel.Dock="Left" Content="פתח CA ללא מילוי אוטומטי" Command="{Binding ManualCommand}" Margin="8,0,0,0" />
+      <Button DockPanel.Dock="Left" Content="בטל מילוי" Command="{Binding CancelCommand}" Margin="8,0,0,0" />
+      <Button DockPanel.Dock="Right" Content="סיום" Command="{Binding FinishCommand}" />
+    </DockPanel>
+    <DataGrid ItemsSource="{Binding Rows}" AutomationProperties.Name="שדות הקריאה">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="שדה" Binding="{Binding Field.Caption}" Width="Auto" ElementStyle="{StaticResource Cell}" />
+        <DataGridTextColumn Header="ערך" Binding="{Binding Field.Value}" Width="3*">
+          <DataGridTextColumn.ElementStyle>
+            <Style TargetType="TextBlock" BasedOn="{StaticResource WrapCell}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding Field.Key}" Value="Summary">
+                  <Setter Property="FlowDirection" Value="LeftToRight" />
+                  <Setter Property="TextAlignment" Value="Right" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </DataGridTextColumn.ElementStyle>
+        </DataGridTextColumn>
+        <DataGridTextColumn Header="תוצאה" Binding="{Binding Result}" Width="2*" ElementStyle="{StaticResource WrapCell}" />
+        <DataGridTemplateColumn Width="Auto">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+              <Button Content="העתק" MinWidth="60" MinHeight="26" Padding="6,2" Margin="4" VerticalAlignment="Top"
+                      Command="{Binding DataContext.CopyCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                      CommandParameter="{Binding}" />
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</UserControl>

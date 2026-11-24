@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>UserRemoveTool</AssemblyName>
+    <RootNamespace>UserRemoveTool</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <!-- Startup time and memory -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishSingleFile>false</PublishSingleFile>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredPGO>false</TieredPGO>
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UserRemoveTool.Core\UserRemoveTool.Core.csproj" />
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\Launch.bat" Link="Launch.bat" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
