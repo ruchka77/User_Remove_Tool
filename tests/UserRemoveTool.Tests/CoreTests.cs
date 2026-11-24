@@ -1,5 +1,6 @@
 using UserRemoveTool.Core;
 using UserRemoveTool.Core.ActiveDirectory;
+using UserRemoveTool.Core.Cache;
 using UserRemoveTool.Core.Configuration;
 using UserRemoveTool.Core.Logging;
 using UserRemoveTool.Core.Models;
@@ -153,6 +154,38 @@ public class VisualTextTests
         var lines = VisualText.Wrap("אחד שניים שלושה ארבעה חמישה", 12).ToList();
         Assert.All(lines, l => Assert.True(l.Length <= 12));
         Assert.Equal("אחד שניים שלושה ארבעה חמישה", string.Join(" ", lines));
+    }
+}
+
+public class CacheTests
+{
+    private static DirectoryUser User(string name, string sam, string id) => new()
+    {
+        ObjectGuid = Guid.NewGuid(), DistinguishedName = $"CN={name},OU=IT,DC=moia,DC=gov,DC=il", SamAccountName = sam, DisplayName = name, NationalId = id
+    };
+
+    [Fact]
+    public async Task Cache_is_searched_locally_survives_restart_and_is_not_plain_text()
+    {
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        var cache = new UserCache(dir, TimeSpan.FromHours(1), new NullLogger());
+        await cache.Ready;
+        cache.Merge([User("דנה כהן", "danac", "000000018"), User("משה לוי", "moshel", "123456782")]);
+        Assert.Equal("danac", Assert.Single(cache.Search("דנה כה", 10)).SamAccountName);
+        Assert.Single(cache.Search("123456782", 10));            // national id is searchable
+        Assert.Empty(cache.Search("דנה לוי", 10));               // every word must match
+
+        var file = Path.Combine(dir, "ad-cache.bin");
+        for (var i = 0; i < 40 && !File.Exists(file); i++) await Task.Delay(100);
+        Assert.True(File.Exists(file));
+        Assert.DoesNotContain("000000018", File.ReadAllText(file)); // encrypted at rest
+
+        var again = new UserCache(dir, TimeSpan.FromHours(1), new NullLogger());
+        await again.Ready;
+        Assert.Equal(2, again.Count);
+        var expired = new UserCache(dir, TimeSpan.FromTicks(1), new NullLogger());
+        await expired.Ready;
+        Assert.Equal(0, expired.Count);                           // older than the TTL is dropped
     }
 }
 

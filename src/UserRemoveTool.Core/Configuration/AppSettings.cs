@@ -9,6 +9,7 @@ public sealed class AppSettings
     public ServiceDeskSettings ServiceDesk { get; set; } = new();
     public LoggingSettings Logging { get; set; } = new();
     public TerminalSettings Terminal { get; set; } = new();
+    public CacheSettings Cache { get; set; } = new();
 
     public static AppSettings Load(string path)
     {
@@ -31,7 +32,7 @@ public sealed class AppSettings
     public void Validate()
     {
         // Explicit nulls in the JSON must produce a clear message, not a NullReferenceException.
-        if (ActiveDirectory is null || ServiceDesk is null || Logging is null || Terminal is null)
+        if (ActiveDirectory is null || ServiceDesk is null || Logging is null || Terminal is null || Cache is null)
             throw new UserFacingException("שגיאה בקובץ ההגדרות: חסר אחד מהמקטעים ActiveDirectory / ServiceDesk / Logging.");
 
         var errors = new List<string>();
@@ -47,6 +48,8 @@ public sealed class AppSettings
             errors.Add("ActiveDirectory:TargetOu אינו Distinguished Name תקין של OU");
         if (ActiveDirectory.MaxResults is < 1 or > 10000) errors.Add("ActiveDirectory:MaxResults חייב להיות בין 1 ל-10000");
         if (ActiveDirectory.TimeoutSeconds is < 1 or > 600) errors.Add("ActiveDirectory:TimeoutSeconds חייב להיות בין 1 ל-600");
+        if (Cache.TtlHours < 1) errors.Add("Cache:TtlHours חייב להיות 1 לפחות");
+        if (Terminal.Width < 40) errors.Add("Terminal:Width חייב להיות 40 לפחות");
         if (ActiveDirectory.MinSearchLength < 1) errors.Add("ActiveDirectory:MinSearchLength חייב להיות 1 לפחות");
         if (ActiveDirectory.SearchDelayMs < 0) errors.Add("ActiveDirectory:SearchDelayMs אינו תקין");
 
@@ -127,6 +130,17 @@ public sealed class TerminalSettings
     /// the bidirectional algorithm). Set false only for a terminal that reorders Hebrew on its own.
     /// </summary>
     public bool VisualHebrew { get; set; } = true;
+    /// <summary>Right-alignment width of Hebrew lines (at most the window width). Keeps text close to the prompts.</summary>
+    public int Width { get; set; } = 80;
+}
+
+public sealed class CacheSettings
+{
+    public bool Enabled { get; set; } = true;
+    /// <summary>Relative to the application folder, or absolute.</summary>
+    public string Directory { get; set; } = "cache";
+    /// <summary>Cached users older than this are ignored and dropped.</summary>
+    public int TtlHours { get; set; } = 24;
 }
 
 public sealed class LoggingSettings

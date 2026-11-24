@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using UserRemoveTool.Core;
 using UserRemoveTool.Core.ActiveDirectory;
+using UserRemoveTool.Core.Cache;
 using UserRemoveTool.Core.Configuration;
 using UserRemoveTool.Core.Logging;
 using UserRemoveTool.Core.Models;
@@ -36,6 +37,7 @@ internal sealed class Cli
 {
     private const int TotalSteps = 6;
     private IAppLogger? _log;
+    private UserCache? _cache;
 
     public async Task<int> RunAsync()
     {
@@ -49,10 +51,16 @@ internal sealed class Cli
             _log = new FileLogger(logDirectory);
             var audit = new AuditLogger(Resolve(settings.Logging.AuditDirectory, logDirectory));
             var store = new RecordStore();
-            store.DeleteStale(TimeSpan.FromDays(1));
+            _ = Task.Run(() => store.DeleteStale(TimeSpan.FromDays(1)));
             directory = new LdapDirectoryService(settings.ActiveDirectory, _log);
+            directory.WarmUp(); // GC / DC connections open in the background while the window starts
+            _cache = settings.Cache.Enabled
+                ? new UserCache(Path.IsPathRooted(settings.Cache.Directory) ? settings.Cache.Directory : Path.Combine(AppContext.BaseDirectory, settings.Cache.Directory),
+                    TimeSpan.FromHours(settings.Cache.TtlHours), _log)
+                : null;
             workflow = new OffboardingWorkflow(directory, audit, _log, store);
             ConsoleOut.VisualHebrew = settings.Terminal.VisualHebrew;
+            ConsoleOut.MaxWidth = settings.Terminal.Width;
             _log.Info("Application started");
         }
         catch (UserFacingException ex)
@@ -91,7 +99,7 @@ internal sealed class Cli
 
         // Step 1: the only pop-up window
         Step(1, "חיפוש משתמש (נפתח חלון חיפוש)");
-        var picked = SearchWindow.Pick(directory, settings.ActiveDirectory, _log!);
+        var picked = SearchWindow.Pick(directory, settings.ActiveDirectory, _log!, _cache);
         if (picked is null)
         {
             ConsoleOut.Line("החיפוש בוטל. לא בוצע שינוי.");

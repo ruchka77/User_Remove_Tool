@@ -45,6 +45,7 @@
              Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="חיפוש משתמש" />
     <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" Margin="0,8" TextWrapping="Wrap" />
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+      <Button Content="רענן מ-AD" Command="{Binding RefreshCommand}" />
       <Button Content="המשך" IsDefault="True" Command="{Binding ContinueCommand}" />
       <Button Content="ביטול" IsCancel="True" Style="{StaticResource Danger}" Command="{Binding CancelCommand}" />
     </StackPanel>

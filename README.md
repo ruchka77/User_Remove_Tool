@@ -46,6 +46,8 @@
 | `ActiveDirectory:SearchEntireDirectory` | ‏`true` (ברירת מחדל): חיפוש ב-Global Catalog של כל היער. ‏`false`: רק הדומיין שב-`DomainController` |
 | `ActiveDirectory:GlobalCatalogServer` | שם שרת Global Catalog (אופציונלי; ריק = נמצא אוטומטית) |
 | `ActiveDirectory:IncludeContacts` | הצגת אנשי קשר (Contact) בתוצאות |
+| `Cache:Enabled`, `Cache:Directory`, `Cache:TtlHours` | מטמון מקומי של משתמשים מחיפושים קודמים (ברירת מחדל: תיקיית `cache` ליד התוכנה, 24 שעות). התוצאות מהמטמון מוצגות מיד, ו-AD נשאל ברקע ומחליף אותן. הקובץ מוצפן ב-DPAPI למשתמש Windows הנוכחי כי הוא כולל שמות, מיילים ותעודות זהות. אם אין הרשאת כתיבה בתיקייה, נשמר ב-`%LOCALAPPDATA%\UserRemoveTool\cache`. למחיקה: למחוק את `ad-cache.bin`. כפתור **רענן מ-AD** מריץ שאילתה מיידית |
+| `Terminal:Width` | רוחב היישור לימין של שורות עברית (ברירת מחדל 80), כדי שהטקסט לא יתרחק מההנחיות בחלון רחב |
 | `ActiveDirectory:MaxResults` | מספר המשתמשים המרבי שמוצג בחיפוש (ברירת מחדל 1000, עד 10000) |
 | `ServiceDesk:Url` | כתובת CA Service Desk |
 | `ServiceDesk:NewTicketUrl` | כתובת חלון הקריאה החדשה |

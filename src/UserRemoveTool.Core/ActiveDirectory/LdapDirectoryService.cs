@@ -158,7 +158,32 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
         });
     });
 
-    private string? DomainOf(Guid objectGuid) => _domainOf.TryGetValue(objectGuid, out var domain) ? domain : null;
+    /// <summary>Opens the Global Catalog and home-domain connections in the background, so the first search does not wait for them.</summary>
+    public void WarmUp() => Task.Run(() =>
+    {
+        try
+        {
+            if (settings.SearchEntireDirectory) GetGlobalCatalog();
+            Connect();
+        }
+        catch (Exception ex) { log.Error("Background connection warm-up failed", ex); }
+    });
+
+    /// <summary>Known from a search; for a user taken from the local cache, looked up in the Global Catalog by GUID.</summary>
+    private string? DomainOf(Guid objectGuid)
+    {
+        if (_domainOf.TryGetValue(objectGuid, out var domain)) return domain;
+        try
+        {
+            var dn = GetEntry(GetGlobalCatalog(), $"<GUID={objectGuid}>", "distinguishedName").DistinguishedName;
+            return _domainOf[objectGuid] = LdapText.GetDnsDomain(dn);
+        }
+        catch (Exception ex) when (ex is DirectoryException or UserFacingException || IsUnreachable(ex))
+        {
+            log.Error($"Cannot resolve the domain of {objectGuid}; using the home domain", ex);
+            return null;
+        }
+    }
     public Task<IReadOnlyList<GroupMembership>> GetGroupsAsync(Guid objectGuid) => Run(() => Read(DomainOf(objectGuid), s => LoadGroups(s, objectGuid)));
 
     public Task RemoveFromGroupAsync(Guid objectGuid, GroupMembership group) => Run(() => Write(DomainOf(objectGuid), s =>

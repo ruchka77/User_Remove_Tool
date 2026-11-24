@@ -25,6 +25,7 @@ Three projects. `UserRemoveTool` (WPF) and `UserRemoveTool.Tests` both depend on
 | `ActiveDirectory/LdapDirectoryService.cs` | LDAP implementation: search, groups, move, disable, error translation |
 | `ActiveDirectory/LdapText.cs` | Filter escaping and DN parsing |
 | `Workflow/OffboardingWorkflow.cs` | Step order, safety checks, auditing, re-entrancy guard |
+| `Cache/UserCache.cs` | Local DPAPI-encrypted cache of users from earlier searches (TTL, instant local search, background refresh) |
 | `Workflow/RecordStore.cs` | Temporary JSON file |
 | `Text/VisualText.cs` | Converts Hebrew lines to visual order for left-to-right consoles; Latin words, paths and attribute names keep their order |
 | `Workflow/NationalIdValidator.cs` | Checks extensionAttribute1 as an Israeli ID number |

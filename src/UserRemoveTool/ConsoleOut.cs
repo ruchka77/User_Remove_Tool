@@ -11,6 +11,8 @@ namespace UserRemoveTool;
 internal static class ConsoleOut
 {
     public static bool VisualHebrew { get; set; } = true;
+    /// <summary>Hebrew lines are right-aligned to at most this width, so they stay near the prompts in a wide window.</summary>
+    public static int MaxWidth { get; set; } = 80;
 
     public static void Setup()
     {
@@ -44,7 +46,7 @@ internal static class ConsoleOut
 
     private static int Width()
     {
-        try { return Math.Max(20, Console.WindowWidth - 1); }
-        catch (IOException) { return 79; }
+        try { return Math.Clamp(Console.WindowWidth - 1, 20, MaxWidth); }
+        catch (IOException) { return Math.Min(79, MaxWidth); }
     }
 }
