@@ -26,7 +26,8 @@ public sealed class SearchPickerViewModel : ObservableObject
         _settings = settings;
         _log = log;
         _status = Hint;
-        ContinueCommand = new RelayCommand(() => { Chosen = Selected; RequestClose?.Invoke(true); }, () => Selected is not null);
+        // Contacts are listed like in ADUC, but they are not accounts and cannot be offboarded.
+        ContinueCommand = new RelayCommand(() => { Chosen = Selected; RequestClose?.Invoke(true); }, () => Selected is { IsContact: false });
         CancelCommand = new RelayCommand(() => RequestClose?.Invoke(false));
     }
 
@@ -70,12 +71,15 @@ public sealed class SearchPickerViewModel : ObservableObject
         {
             await Task.Delay(_settings.SearchDelayMs, cts.Token);
             Status = "מחפש...";
-            var found = await _directory.SearchAsync(term, cts.Token);
+            var result = await _directory.SearchAsync(term, cts.Token);
             if (cts.IsCancellationRequested) return;
+            var found = result.Users;
             Results = found;
-            Status = found.Count == 0 ? "לא נמצאו משתמשים"
-                : found.Count >= _settings.MaxResults ? $"מוצגות {found.Count} התוצאות הראשונות, יש לצמצם את החיפוש"
-                : $"נמצאו {found.Count} משתמשים";
+            var contacts = found.Count(u => u.IsContact);
+            var extra = contacts > 0 ? $", מהם {contacts} אנשי קשר שלא ניתן לבחור" : "";
+            Status = found.Count == 0 ? $"לא נמצאו משתמשים ({result.Source})"
+                : found.Count >= _settings.MaxResults ? $"מוצגות {found.Count} התוצאות הראשונות, יש לצמצם את החיפוש ({result.Source})"
+                : $"נמצאו {found.Count} משתמשים{extra} ({result.Source})";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)

@@ -10,8 +10,28 @@ using Xunit;
 
 namespace UserRemoveTool.Tests;
 
-public class LdapTextTests
+public sealed class LdapTextTests
 {
+    [Fact]
+    public void Domain_is_taken_from_the_dn_and_contacts_are_flagged()
+    {
+        var user = new DirectoryUser { ObjectGuid = Guid.NewGuid(), DistinguishedName = "CN=a,OU=x,DC=child,DC=moia,DC=gov,DC=il", SamAccountName = "a" };
+        Assert.Equal("child.moia.gov.il", user.Domain);
+        Assert.Equal("משתמש", user.Kind);
+        Assert.Equal("איש קשר", (user with { IsContact = true }).Kind);
+    }
+
+    [Fact]
+    public async Task Contacts_cannot_be_offboarded()
+    {
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        var ad = new WorkflowTests.FakeDirectory();
+        ad.User = ad.User with { IsContact = true };
+        var flow = new OffboardingWorkflow(ad, new WorkflowTests.FakeAudit(), new NullLogger(), new RecordStore(dir), "S-1-5-21-1-2-3-9999");
+        await Assert.ThrowsAsync<UserFacingException>(() => flow.StartAsync(ad.User.ObjectGuid));
+        Directory.Delete(dir, true);
+    }
+
     [Fact]
     public void Dn_parsing_honours_escaped_commas()
     {
@@ -29,15 +49,23 @@ public class LdapTextTests
     public void Filter_is_users_only_and_does_not_exclude_disabled_accounts()
     {
         var filter = LdapText.BuildUserFilter("moshe");
-        Assert.StartsWith("(&(objectCategory=person)(objectClass=user)", filter);
+        Assert.StartsWith("(&(&(objectCategory=person)(objectClass=user))", filter);
         Assert.DoesNotContain("userAccountControl", filter);
     }
 
     [Fact]
-    public void Filter_matches_contains_on_all_ten_attributes()
+    public void Contacts_are_included_only_when_configured()
+    {
+        Assert.Contains("(objectClass=contact)", LdapText.BuildUserFilter("a", true));
+        Assert.StartsWith("(&(|(&(objectCategory=person)(objectClass=user))(objectClass=contact))", LdapText.BuildUserFilter("a", true));
+        Assert.DoesNotContain("contact", LdapText.BuildUserFilter("a"));
+    }
+
+    [Fact]
+    public void Filter_matches_contains_on_all_eleven_attributes()
     {
         var filter = LdapText.BuildUserFilter("משה");
-        foreach (var attribute in new[] { "displayName", "cn", "name", "givenName", "sn", "sAMAccountName", "userPrincipalName", "mail", "description", "extensionAttribute1" })
+        foreach (var attribute in new[] { "displayName", "cn", "name", "givenName", "sn", "sAMAccountName", "userPrincipalName", "mail", "proxyAddresses", "description", "extensionAttribute1" })
             Assert.Contains($"({attribute}=*משה*)", filter);
         Assert.Equal(filter.Count(c => c == '('), filter.Count(c => c == ')'));
     }
@@ -48,7 +76,7 @@ public class LdapTextTests
         var filter = LdapText.BuildUserFilter("  משה   כהן ");
         Assert.Equal(1, filter.Split("(displayName=*משה*)").Length - 1);
         Assert.Contains("(givenName=*כהן*)", filter);
-        Assert.Matches(@"^\(&\(objectCategory=person\)\(objectClass=user\)\(\|.*משה.*\)\(\|.*כהן.*\)\)$", filter);
+        Assert.Matches(@"^\(&\(&\(objectCategory=person\)\(objectClass=user\)\)\(\|.*משה.*\)\(\|.*כהן.*\)\)$", filter);
     }
 }
 public class ConfigurationTests
@@ -143,7 +171,7 @@ internal sealed class NullLogger : IAppLogger
 
 public sealed class WorkflowTests : IDisposable
 {
-    private sealed class FakeAudit : IAuditLogger
+    internal sealed class FakeAudit : IAuditLogger
     {
         public readonly List<(string Action, AuditOutcome Outcome)> Entries = new();
         public bool Broken;
@@ -154,7 +182,7 @@ public sealed class WorkflowTests : IDisposable
         }
     }
 
-    private sealed class FakeDirectory : IDirectoryService
+    internal sealed class FakeDirectory : IDirectoryService
     {
         public DirectoryUser User = new() { ObjectGuid = Guid.NewGuid(), DistinguishedName = "CN=a,OU=b,DC=c", SamAccountName = "a", Email = "a@b", DisplayName = "דנה", Sid = "S-1-5-21-1-2-3-1001" };
         public List<GroupMembership> Groups = [new("CN=G1", "G1", false, false), new("CN=G2", "G2", false, false), new("CN=Domain Users", "Domain Users", true, true)];
@@ -163,9 +191,9 @@ public sealed class WorkflowTests : IDisposable
         public bool FailMove, FailDisable, NoTargetOu;
         public TaskCompletionSource? Hold;
 
-        public Task<IReadOnlyList<DirectoryUser>> SearchAsync(string term, CancellationToken ct) => throw new NotSupportedException();
+        public Task<SearchResult> SearchAsync(string term, CancellationToken ct) => throw new NotSupportedException();
         public Task<DirectoryUser> GetUserAsync(Guid g) => Task.FromResult(User);
-        public Task EnsureTargetOuAsync() => NoTargetOu ? throw new UserFacingException("ou") : Task.CompletedTask;
+        public Task EnsureTargetOuAsync(Guid g) => NoTargetOu ? throw new UserFacingException("ou") : Task.CompletedTask;
         public Task<IReadOnlyList<GroupMembership>> GetGroupsAsync(Guid g) => Task.FromResult<IReadOnlyList<GroupMembership>>(Groups.ToList());
         public async Task RemoveFromGroupAsync(Guid g, GroupMembership group)
         {

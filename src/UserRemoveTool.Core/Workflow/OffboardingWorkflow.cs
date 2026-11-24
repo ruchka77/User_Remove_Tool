@@ -27,10 +27,12 @@ public sealed class OffboardingWorkflow(IDirectoryService directory, IAuditLogge
         var user = await directory.GetUserAsync(objectGuid).ConfigureAwait(false);
         if (_operatorSid is not null && user.Sid.Equals(_operatorSid, StringComparison.OrdinalIgnoreCase))
             throw new UserFacingException("לא ניתן להסיר את המשתמש שמפעיל את התוכנה.");
+        if (user.IsContact)
+            throw new UserFacingException("זהו איש קשר (Contact) ולא חשבון משתמש, ולכן אין מה להסיר ממנו.");
         if (user.IsCriticalSystemObject)
             throw new UserFacingException("זהו חשבון מערכת מובנה ולא ניתן להסירו.");
         // Checked before anything is changed, so the process does not get stuck half way.
-        await directory.EnsureTargetOuAsync().ConfigureAwait(false);
+        await directory.EnsureTargetOuAsync(user.ObjectGuid).ConfigureAwait(false);
 
         var record = new OffboardingRecord
         {

@@ -4,10 +4,11 @@ namespace UserRemoveTool.Core.ActiveDirectory;
 
 public interface IDirectoryService
 {
-    Task<IReadOnlyList<DirectoryUser>> SearchAsync(string term, CancellationToken ct);
+    Task<SearchResult> SearchAsync(string term, CancellationToken ct);
     /// <summary>Re-reads the user by objectGUID, so a moved or renamed object is still found.</summary>
     Task<DirectoryUser> GetUserAsync(Guid objectGuid);
-    Task EnsureTargetOuAsync();
+    /// <summary>Checks the target OU exists and is in the user's domain, before anything is changed.</summary>
+    Task EnsureTargetOuAsync(Guid objectGuid);
     Task<IReadOnlyList<GroupMembership>> GetGroupsAsync(Guid objectGuid);
     Task RemoveFromGroupAsync(Guid objectGuid, GroupMembership group);
     Task MoveToTargetOuAsync(Guid objectGuid);

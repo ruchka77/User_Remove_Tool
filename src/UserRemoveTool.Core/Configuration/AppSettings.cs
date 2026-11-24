@@ -85,6 +85,12 @@ public sealed class ActiveDirectorySettings
     public int MaxResults { get; set; } = 1000;
     public int MinSearchLength { get; set; } = 2;
     public int SearchDelayMs { get; set; } = 250;
+    /// <summary>true = search the forest Global Catalog ("Entire Directory"); false = only the domain above.</summary>
+    public bool SearchEntireDirectory { get; set; } = true;
+    /// <summary>Optional Global Catalog server. Empty = found automatically for the current forest.</summary>
+    public string GlobalCatalogServer { get; set; } = "";
+    /// <summary>Also list contact objects, as ADUC "Find Users, Contacts, and Groups" does. They cannot be selected.</summary>
+    public bool IncludeContacts { get; set; } = true;
     public int TimeoutSeconds { get; set; } = 30;
 }
 

@@ -52,16 +52,17 @@ public static class LdapText
     /// <summary>The attributes searched, as in ADUC "Find Users, Contacts, and Groups" plus mail, description and the national id.</summary>
     public static readonly string[] SearchAttributes =
     [
-        "displayName", "cn", "name", "givenName", "sn", "sAMAccountName", "userPrincipalName", "mail", "description", "extensionAttribute1"
+        "displayName", "cn", "name", "givenName", "sn", "sAMAccountName", "userPrincipalName", "mail", "proxyAddresses", "description", "extensionAttribute1"
     ];
 
     /// <summary>
     /// Users only (enabled and disabled). Every whitespace-separated word must appear (*word*) in at least one attribute,
     /// so "משה כהן" finds givenName + sn as well as a display name.
     /// </summary>
-    public static string BuildUserFilter(string term)
+    public static string BuildUserFilter(string term, bool includeContacts = false)
     {
         string Any(string word) => "(|" + string.Concat(SearchAttributes.Select(a => $"({a}=*{EscapeFilter(word)}*)")) + ")";
         var words = term.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        return $"(&(objectCategory=person)(objectClass=user){string.Concat(words.Select(Any))})";
+        var kind = includeContacts ? "(|(&(objectCategory=person)(objectClass=user))(objectClass=contact))" : "(&(objectCategory=person)(objectClass=user))";
+        return $"(&{kind}{string.Concat(words.Select(Any))})";
     }}

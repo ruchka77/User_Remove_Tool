@@ -1,5 +1,8 @@
+using System.DirectoryServices.ActiveDirectory;
 using System.DirectoryServices.Protocols;
+using System.Net.Sockets;
 using System.Security.Principal;
+using System.Collections.Concurrent;
 using UserRemoveTool.Core.Configuration;
 using UserRemoveTool.Core.Logging;
 using UserRemoveTool.Core.Models;
@@ -8,77 +11,164 @@ namespace UserRemoveTool.Core.ActiveDirectory;
 
 /// <summary>
 /// Active Directory access over LDAP with the logged-on user's Windows credentials (Kerberos via Negotiate),
-/// signed and sealed. One DC is pinned for the session so that consecutive writes do not hit replication lag.
+/// signed and sealed. Search runs against the forest Global Catalog ("Entire Directory"); everything that reads
+/// in detail or changes an object talks to a domain controller of the user's own domain, pinned per domain so that
+/// consecutive writes do not hit replication lag.
 /// </summary>
 public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppLogger log) : IDirectoryService, IDisposable
 {
     private const int AccountDisable = 0x2; // ADS_UF_ACCOUNTDISABLE
     private const int DomainUsersRid = 513;
     private const int ServerDown = 81;
+    private const int GlobalCatalogPort = 3268;
+    private const int PageSize = 1000;
 
     private static readonly string[] UserAttributes =
     [
-        "objectGUID", "objectSid", "displayName", "name", "sAMAccountName", "mail", "homeDirectory", "extensionAttribute1",
+        "objectGUID", "objectSid", "objectClass", "displayName", "name", "sAMAccountName", "mail", "homeDirectory", "extensionAttribute1",
         "userAccountControl", "primaryGroupID", "isCriticalSystemObject", "adminCount"
     ];
 
     private readonly object _gate = new();
-    private Session? _session;
+    private readonly Dictionary<string, Session> _sessions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<Guid, string> _domainOf = new();
+    private string? _homeDomain;
+    private LdapConnection? _globalCatalog;
 
-    private sealed record Session(LdapConnection Connection, string BaseDn, SecurityIdentifier DomainSid);
-
-    private const int PageSize = 1000;
+    private sealed record Session(LdapConnection Connection, string Domain, string BaseDn, SecurityIdentifier DomainSid);
 
     /// <summary>
-    /// Like "Find Users, Contacts, and Groups": whole domain, subtree, enabled and disabled users, *term* on all name
-    /// attributes. Every page is read until the cap, so AD never truncates silently at the first page.
+    /// "Entire Directory": the Global Catalog, subtree from the root, enabled and disabled users (and contacts when
+    /// configured), *word* on every name attribute. All pages are read up to the cap. If the Global Catalog cannot be
+    /// reached, each domain of the forest is searched on its own.
     /// </summary>
-    public Task<IReadOnlyList<DirectoryUser>> SearchAsync(string term, CancellationToken ct) => Run(() => Read(s =>
+    public Task<SearchResult> SearchAsync(string term, CancellationToken ct) => Run(() =>
     {
-        var filter = LdapText.BuildUserFilter(term);
+        var filter = LdapText.BuildUserFilter(term, settings.IncludeContacts);
+        string source;
+        List<DirectoryUser> users;
+        if (settings.SearchEntireDirectory)
+        {
+            try
+            {
+                users = SearchGlobalCatalog(filter, ct);
+                source = "כל מדריך הכתובות";
+            }
+            catch (Exception ex) when (IsUnreachable(ex))
+            {
+                log.Error("Global Catalog search failed; searching the domains one by one", ex);
+                users = SearchDomains(filter, ct);
+                source = "ה-Global Catalog לא זמין, החיפוש בוצע לפי דומיינים";
+            }
+        }
+        else
+        {
+            users = SearchDomains(filter, ct, homeOnly: true);
+            source = "דומיין אחד";
+        }
+
+        foreach (var user in users) _domainOf[user.ObjectGuid] = user.Domain;
+        var sorted = users.Take(settings.MaxResults).OrderBy(u => u.DisplayName, StringComparer.CurrentCulture).ToList();
+        return new SearchResult(sorted, source);
+    }, ct);
+
+    private static bool IsUnreachable(Exception ex) =>
+        ex is LdapException { ErrorCode: ServerDown or 91 } or SocketException or ActiveDirectoryOperationException
+            or ActiveDirectoryObjectNotFoundException;
+
+    private List<DirectoryUser> SearchGlobalCatalog(string filter, CancellationToken ct)
+    {
+        try { return Paged(GetGlobalCatalog(), "", filter, ct); }
+        catch (LdapException ex) when (ex.ErrorCode == ServerDown)
+        {
+            lock (_gate) { _globalCatalog = null; } // one retry on a fresh connection
+            return Paged(GetGlobalCatalog(), "", filter, ct);
+        }
+    }
+
+    private List<DirectoryUser> SearchDomains(string filter, CancellationToken ct, bool homeOnly = false)
+    {
+        var domains = new List<string?> { null };
+        if (!homeOnly)
+        {
+            try { domains = Forest.GetCurrentForest().Domains.Cast<Domain>().Select(d => (string?)d.Name).ToList(); }
+            catch (Exception ex) when (IsUnreachable(ex)) { log.Error("Cannot enumerate the forest domains", ex); }
+        }
+
+        var users = new List<DirectoryUser>();
+        Exception? last = null;
+        var succeeded = 0;
+        foreach (var domain in domains)
+        {
+            if (users.Count >= settings.MaxResults) break;
+            try
+            {
+                var found = Read(domain, s => Paged(s.Connection, s.BaseDn, filter, ct));
+                users.AddRange(found);
+                succeeded++;
+            }
+            catch (Exception ex) when (IsUnreachable(ex) || ex is DirectoryException)
+            {
+                last = ex;
+                log.Error($"Search in domain {domain ?? settings.DomainController} failed", ex);
+            }
+        }
+        if (succeeded == 0 && last is not null) throw last;
+        return users;
+    }
+
+    /// <summary>Subtree search with paging (PageSize 1000, SizeLimit 0) until the pages end or the cap is reached.</summary>
+    private List<DirectoryUser> Paged(LdapConnection connection, string baseDn, string filter, CancellationToken ct)
+    {
         var users = new List<DirectoryUser>();
         var cookie = Array.Empty<byte>();
         do
         {
             ct.ThrowIfCancellationRequested();
-            var request = new SearchRequest(s.BaseDn, filter, SearchScope.Subtree, UserAttributes) { SizeLimit = 0 };
+            var request = new SearchRequest(baseDn, filter, SearchScope.Subtree, UserAttributes) { SizeLimit = 0 };
             request.Controls.Add(new PageResultRequestControl(PageSize) { Cookie = cookie });
-            var response = (SearchResponse)s.Connection.SendRequest(request);
+            var response = (SearchResponse)connection.SendRequest(request);
             users.AddRange(response.Entries.Cast<SearchResultEntry>().Select(ToUser));
             cookie = response.Controls.OfType<PageResultResponseControl>().FirstOrDefault()?.Cookie ?? [];
         } while (cookie.Length > 0 && users.Count < settings.MaxResults);
+        return users;
+    }
 
-        return (IReadOnlyList<DirectoryUser>)users.Take(settings.MaxResults)
-            .OrderBy(u => u.DisplayName, StringComparer.CurrentCulture).ToList();
-    }), ct);
-    public Task<DirectoryUser> GetUserAsync(Guid objectGuid) => Run(() => Read(s => FindUser(s, objectGuid)));
+    /// <summary>Full details come from a DC of the user's own domain; the Global Catalog holds only some attributes.</summary>
+    public Task<DirectoryUser> GetUserAsync(Guid objectGuid) => Run(() => Read(DomainOf(objectGuid), s => FindUser(s, objectGuid)));
 
-    public Task EnsureTargetOuAsync() => Run(() => Read(s =>
+    /// <summary>The target OU must exist, and the user must be in the same domain: AD cannot move an object between domains with a plain move.</summary>
+    public Task EnsureTargetOuAsync(Guid objectGuid) => Run(() =>
     {
-        try
+        var targetDomain = LdapText.GetDnsDomain(settings.TargetOu);
+        var userDomain = DomainOf(objectGuid) ?? Read(null, s => s.Domain);
+        if (!string.Equals(userDomain, targetDomain, StringComparison.OrdinalIgnoreCase))
+            throw new UserFacingException($"המשתמש נמצא בדומיין {userDomain}, וה-OU היעד בדומיין {targetDomain}. לא ניתן להעביר משתמש בין דומיינים בכלי זה, ולכן לא בוצע שינוי.");
+        return Read(targetDomain, s =>
         {
-            GetEntry(s.Connection, settings.TargetOu, "distinguishedName");
-        }
-        catch (DirectoryOperationException ex) when (ex.Response?.ResultCode is ResultCode.NoSuchObject or ResultCode.InvalidDNSyntax or ResultCode.Referral)
-        {
-            throw new UserFacingException($"ה-OU היעד לא נמצא: {settings.TargetOu}", ex);
-        }
-        return true;
-    }));
+            try
+            {
+                GetEntry(s.Connection, settings.TargetOu, "distinguishedName");
+            }
+            catch (DirectoryOperationException ex) when (ex.Response?.ResultCode is ResultCode.NoSuchObject or ResultCode.InvalidDNSyntax or ResultCode.Referral)
+            {
+                throw new UserFacingException($"ה-OU היעד לא נמצא: {settings.TargetOu}", ex);
+            }
+            return true;
+        });
+    });
 
-    public Task<IReadOnlyList<GroupMembership>> GetGroupsAsync(Guid objectGuid) => Run(() => Read(s => LoadGroups(s, objectGuid)));
+    private string? DomainOf(Guid objectGuid) => _domainOf.TryGetValue(objectGuid, out var domain) ? domain : null;
+    public Task<IReadOnlyList<GroupMembership>> GetGroupsAsync(Guid objectGuid) => Run(() => Read(DomainOf(objectGuid), s => LoadGroups(s, objectGuid)));
 
-    public Task RemoveFromGroupAsync(Guid objectGuid, GroupMembership group) => Run(() => Write(s =>
+    public Task RemoveFromGroupAsync(Guid objectGuid, GroupMembership group) => Run(() => Write(DomainOf(objectGuid), s =>
     {
         var user = FindUser(s, objectGuid);
-        LdapConnection? foreign = null;
         try
         {
             // Universal groups may live in another domain of the forest and must be changed there.
             var groupDomain = LdapText.GetDnsDomain(group.DistinguishedName);
-            var connection = s.Connection;
-            if (!groupDomain.Equals(LdapText.GetDnsDomain(s.BaseDn), StringComparison.OrdinalIgnoreCase))
-                connection = foreign = Open(groupDomain);
+            var connection = groupDomain.Equals(s.Domain, StringComparison.OrdinalIgnoreCase) ? s.Connection : Connect(groupDomain).Connection;
 
             // Last line of defence: decide by the group's SID as it is right now, never by its name.
             var groupSid = GetSid(GetEntry(connection, group.DistinguishedName, "objectSid"))
@@ -110,14 +200,10 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
                 throw;
             log.Info($"{user.SamAccountName} was already not a member of {group.DistinguishedName}");
         }
-        finally
-        {
-            foreign?.Dispose();
-        }
         return true;
     }));
 
-    public Task MoveToTargetOuAsync(Guid objectGuid) => Run(() => Write(s =>
+    public Task MoveToTargetOuAsync(Guid objectGuid) => Run(() => Write(DomainOf(objectGuid), s =>
     {
         var user = FindUser(s, objectGuid);
         if (IsInTargetOu(user)) return true;
@@ -127,7 +213,7 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
         return true;
     }));
 
-    public Task DisableAsync(Guid objectGuid) => Run(() => Write(s =>
+    public Task DisableAsync(Guid objectGuid) => Run(() => Write(DomainOf(objectGuid), s =>
     {
         var user = FindUser(s, objectGuid);
         if (user.IsDisabled) return true;
@@ -147,7 +233,19 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
         var entry = GetEntry(s.Connection, $"<GUID={objectGuid}>", "memberOf", "primaryGroupID");
         var result = new List<GroupMembership>();
 
-        foreach (var dn in Strings(entry, "memberOf"))
+        var memberOf = Strings(entry, "memberOf").ToList();
+        try
+        {
+            // A domain controller lists only its own domain's groups; the Global Catalog adds universal groups of other domains.
+            var fromGc = GetEntry(GetGlobalCatalog(), $"<GUID={objectGuid}>", "memberOf");
+            memberOf.AddRange(Strings(fromGc, "memberOf").Where(g => !memberOf.Contains(g, StringComparer.OrdinalIgnoreCase)));
+        }
+        catch (Exception ex) when (IsUnreachable(ex) || ex is DirectoryException or UserFacingException)
+        {
+            log.Error("Cannot read memberOf from the Global Catalog; only the domain groups are listed", ex);
+        }
+
+        foreach (var dn in memberOf)
         {
             var sid = TryGetGroupSid(s, dn);
             result.Add(new GroupMembership(dn, NameOf(dn), sid is not null && IsDomainUsers(sid), false));
@@ -223,7 +321,8 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
             UserAccountControl = int.TryParse(Text(e, "userAccountControl"), out var uac) ? uac : null,
             PrimaryGroupId = int.TryParse(Text(e, "primaryGroupID"), out var pg) ? pg : 0,
             IsCriticalSystemObject = Text(e, "isCriticalSystemObject").Equals("TRUE", StringComparison.OrdinalIgnoreCase),
-            IsPrivileged = Text(e, "adminCount") == "1"
+            IsPrivileged = Text(e, "adminCount") == "1",
+            IsContact = Strings(e, "objectClass").Contains("contact", StringComparer.OrdinalIgnoreCase)
         };
     }
 
@@ -233,9 +332,9 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
     private static byte[]? Bytes(SearchResultEntry e, string name) =>
         e.Attributes[name] is { Count: > 0 } a ? (byte[])a.GetValues(typeof(byte[]))[0] : null;
 
-    private LdapConnection Open(string host)
+    private LdapConnection Open(string host, int port = 389)
     {
-        var connection = new LdapConnection(new LdapDirectoryIdentifier(host))
+        var connection = new LdapConnection(new LdapDirectoryIdentifier(host, port))
         {
             AuthType = AuthType.Negotiate, // current Windows logon, Kerberos first
             Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds)
@@ -243,6 +342,7 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
         try
         {
             connection.SessionOptions.ProtocolVersion = 3;
+            // Searches use the Global Catalog or one domain at a time, and writes must never follow a referral.
             connection.SessionOptions.ReferralChasing = ReferralChasingOptions.None;
             connection.SessionOptions.Signing = true;
             connection.SessionOptions.Sealing = true;
@@ -256,25 +356,54 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
         }
     }
 
-    private Session Connect()
+    /// <summary>The configured server, otherwise a Global Catalog server found for the current forest, otherwise the configured domain.</summary>
+    private LdapConnection GetGlobalCatalog()
     {
         lock (_gate)
         {
-            if (_session is not null) return _session;
+            if (_globalCatalog is not null) return _globalCatalog;
+            var host = settings.GlobalCatalogServer;
+            if (string.IsNullOrWhiteSpace(host))
+            {
+                try { using var gc = Forest.GetCurrentForest().FindGlobalCatalog(); host = gc.Name; }
+                catch (Exception ex) when (IsUnreachable(ex))
+                {
+                    log.Error("FindGlobalCatalog failed; trying the configured domain on the Global Catalog port", ex);
+                    host = settings.DomainController;
+                }
+            }
+            _globalCatalog = Open(host, GlobalCatalogPort);
+            log.Info($"Connected to Global Catalog {host}:{GlobalCatalogPort}");
+            return _globalCatalog;
+        }
+    }
+
+    /// <summary>A pinned connection to a domain controller of the domain (null = the configured home domain).</summary>
+    private Session Connect(string? domain = null)
+    {
+        lock (_gate)
+        {
+            domain ??= _homeDomain;
+            if (domain is not null && _sessions.TryGetValue(domain, out var existing)) return existing;
             string host, baseDn;
-            using (var locator = Open(settings.DomainController))
+            using (var locator = Open(domain ?? settings.DomainController))
             {
                 var root = GetEntry(locator, "", "dnsHostName", "defaultNamingContext");
                 host = Text(root, "dnsHostName");
                 baseDn = Text(root, "defaultNamingContext");
             }
+            var dnsDomain = LdapText.GetDnsDomain(baseDn);
+            if (_sessions.TryGetValue(dnsDomain, out existing)) return existing;
             var connection = Open(host);
             try
             {
                 var sid = GetSid(GetEntry(connection, baseDn, "objectSid"))
                           ?? throw new UserFacingException("לא ניתן לקרוא את מזהה הדומיין.");
                 log.Info($"Connected to {host}, base {baseDn}");
-                return _session = new Session(connection, baseDn, sid);
+                var session = new Session(connection, dnsDomain, baseDn, sid);
+                _sessions[dnsDomain] = session;
+                if (domain is null) _homeDomain = dnsDomain;
+                return session;
             }
             catch
             {
@@ -288,23 +417,24 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
     {
         // Not disposed here: another read may still be using it; the finalizer releases the handle.
         lock (_gate)
-            if (ReferenceEquals(_session, session)) _session = null;
+            if (_sessions.TryGetValue(session.Domain, out var current) && ReferenceEquals(current, session))
+                _sessions.Remove(session.Domain);
     }
 
-    private T Read<T>(Func<Session, T> action)
+    private T Read<T>(string? domain, Func<Session, T> action)
     {
-        var session = Connect();
+        var session = Connect(domain);
         try { return action(session); }
         catch (LdapException ex) when (ex.ErrorCode == ServerDown)
         {
             Drop(session); // reads are safe to repeat on a fresh connection
-            return action(Connect());
+            return action(Connect(session.Domain));
         }
     }
 
-    private T Write<T>(Func<Session, T> action)
+    private T Write<T>(string? domain, Func<Session, T> action)
     {
-        var session = Connect();
+        var session = Connect(domain);
         try { return action(session); }
         catch (LdapException ex) when (ex.ErrorCode == ServerDown)
         {
@@ -312,7 +442,6 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
             throw;
         }
     }
-
     private Task<T> Run<T>(Func<T> action, CancellationToken ct = default) => Task.Run(() =>
     {
         try { return action(); }
@@ -320,6 +449,11 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
         {
             log.Error("LDAP operation failed", ex);
             throw new UserFacingException(Translate(ex), ex);
+        }
+        catch (Exception ex) when (ex is SocketException or ActiveDirectoryOperationException or ActiveDirectoryObjectNotFoundException)
+        {
+            log.Error("Directory connection failed", ex);
+            throw new UserFacingException("לא ניתן להתחבר ל-Active Directory (Domain Controller או Global Catalog).", ex);
         }
     }, ct);
 
@@ -345,8 +479,10 @@ public sealed class LdapDirectoryService(ActiveDirectorySettings settings, IAppL
     {
         lock (_gate)
         {
-            _session?.Connection.Dispose();
-            _session = null;
+            foreach (var s in _sessions.Values) s.Connection.Dispose();
+            _sessions.Clear();
+            _globalCatalog?.Dispose();
+            _globalCatalog = null;
         }
     }
 }

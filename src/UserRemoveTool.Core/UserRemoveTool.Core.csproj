@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="System.DirectoryServices" Version="8.0.0" />
     <PackageReference Include="System.DirectoryServices.Protocols" Version="8.0.2" />
     <EmbeddedResource Include="ServiceDesk\ca-ticket.js" LogicalName="ca-ticket.js" />
     <InternalsVisibleTo Include="UserRemoveTool.Tests" />
